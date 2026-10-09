@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# Gestion de Proyectos - proyectos.flexxus.com.ar
+#
+# Codigo e imagen: bitbucket.org/flexxus_id/flxgestorproyectos
+# Este repo es solo el stack: lo que Portainer despliega.
+#
+# Una sola imagen: Express sirve la API (/api) y el frontend compilado.
+# La base Firebird de SAR queda afuera y se configura por variables.
+#
+# Variables que hay que cargar en el stack: SERVICE_NAME, NODE, LOKI_URL,
+# DOMAIN_NAME, DB_HOST, DB_PORT, DB_PATH, DB_USER, DB_PASSWORD,
+# JWT_SECRET, JWT_REFRESH_SECRET.
+# Sin DB_PASSWORD o sin los JWT la aplicacion no arranca (los valida al inicio).
+# ---------------------------------------------------------------------------
+version: '3.6'
+
+services:
+  gestion-proyectos:
+    image: fabreguesm/gestion-proyectos:0.1.0
+    hostname: proyectos-flexxus-com-ar
+    networks:
+      - traefik
+    volumes:
+      - 'logs:/app/logs'
+    environment:
+      # NODE_ENV=production, PORT=4100 y TZ ya vienen en la imagen.
+      # TZ es obligatoria: node-firebird interpreta los TIMESTAMP en la zona del proceso.
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_PATH=${DB_PATH}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_POOL_MAX=10
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_EXPIRES_IN=60m
+      - JWT_REFRESH_EXPIRES_IN=12h
+      - LOGIN_MAX_INTENTOS=5
+      - LOGIN_VENTANA_MIN=15
+      - CORS_ORIGIN=https://${DOMAIN_NAME}
+    # Reemplaza el healthcheck de la imagen, que pega a /api/health y da 503
+    # cuando no hay conexion con Firebird. Con ese, una base caida o lenta hace
+    # que Swarm mate el contenedor en loop aunque la aplicacion este sana.
+    # Aca solo se verifica que el proceso responda; el estado de la base se ve
+    # en https://${DOMAIN_NAME}/api/health.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:4100/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    deploy:
+      placement:
+        constraints: ["${NODE}"]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.${SERVICE_NAME}-http.entrypoints=web"
+        - "traefik.http.routers.${SERVICE_NAME}-http.rule=Host(`${DOMAIN_NAME}`)"
+        - "traefik.http.middlewares.${SERVICE_NAME}-http.redirectscheme.scheme=https"
+        - "traefik.http.routers.${SERVICE_NAME}-https.rule=Host(`${DOMAIN_NAME}`)"
+        - "traefik.http.routers.${SERVICE_NAME}-https.entrypoints=https"
+        - "traefik.http.routers.${SERVICE_NAME}-https.tls=true"
+        - "traefik.http.routers.${SERVICE_NAME}-https.tls.certresolver=myresolver"
+        - "traefik.http.services.${SERVICE_NAME}-http.loadbalancer.server.port=4100"
+      restart_policy:
+        condition: any
+        delay: 10s
+    logging:
+      driver: loki
+      options:
+        loki-url: ${LOKI_URL}
+
+volumes:
+  # Solo bitacoras (api.log, app.log, error.log). Los datos viven en Firebird:
+  # perder este volumen no pierde informacion de negocio.
+  logs:
+    name: "${SERVICE_NAME}_logs"
+
+networks:
+  traefik:
+    external: true
+    name: traefik-network
