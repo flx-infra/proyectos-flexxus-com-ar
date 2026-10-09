@@ -18,6 +18,10 @@ services:
   gestion-proyectos:
     image: fabreguesm/gestion-proyectos:0.1.0
     hostname: proyectos-flexxus-com-ar
+    # Temporal, hasta que el dominio este en Cloudflare: acceso directo por
+    # http://<ip del entorno>:4100. Sacarlo cuando ande https://${DOMAIN_NAME}.
+    ports:
+      - '4100:4100'
     networks:
       - traefik
     volumes:
