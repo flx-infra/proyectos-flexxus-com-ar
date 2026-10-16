@@ -16,7 +16,7 @@ version: '3.6'
 
 services:
   gestion-proyectos:
-    image: fabreguesm/gestion-proyectos:0.1.0
+    image: fabreguesm/gestion-proyectos:0.1.1
     hostname: proyectos-flexxus-com-ar
     # Temporal, hasta que el dominio este en Cloudflare: acceso directo por
     # http://<ip del entorno>:4100. Sacarlo cuando ande https://${DOMAIN_NAME}.
