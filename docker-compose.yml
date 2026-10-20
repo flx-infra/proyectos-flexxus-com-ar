@@ -9,14 +9,15 @@
 #
 # Variables que hay que cargar en el stack: SERVICE_NAME, NODE, LOKI_URL,
 # DOMAIN_NAME, DB_HOST, DB_PORT, DB_PATH, DB_USER, DB_PASSWORD,
-# JWT_SECRET, JWT_REFRESH_SECRET.
+# JWT_SECRET, JWT_REFRESH_SECRET. Cuando se active el volumen de adjuntos:
+# ADJUNTOS_SMB_USER y ADJUNTOS_SMB_PASS.
 # Sin DB_PASSWORD o sin los JWT la aplicacion no arranca (los valida al inicio).
 # ---------------------------------------------------------------------------
 version: '3.6'
 
 services:
   gestion-proyectos:
-    image: fabreguesm/gestion-proyectos:0.1.1
+    image: fabreguesm/gestion-proyectos:0.1.2
     hostname: proyectos-flexxus-com-ar
     # Temporal, hasta que el dominio este en Cloudflare: acceso directo por
     # http://<ip del entorno>:4100. Sacarlo cuando ande https://${DOMAIN_NAME}.
@@ -26,6 +27,11 @@ services:
       - traefik
     volumes:
       - 'logs:/app/logs'
+      # Adjuntos de SAR (Gantt). PENDIENTE: worker3 no llega a 192.168.121.21:445 (probado el
+      # 20/10/2026 desde el contenedor: TIMEOUT). Con el volumen activo y sin red, Swarm no puede
+      # montarlo y el servicio no arranca. Cuando infra abra el 445 de worker3 al servidor de
+      # archivos, descomentar esta linea y el volumen "adjuntos" de abajo.
+      # - 'adjuntos:/mnt/flexxus:ro'
     environment:
       # NODE_ENV=production, PORT=4100 y TZ ya vienen en la imagen.
       # TZ es obligatoria: node-firebird interpreta los TIMESTAMP en la zona del proceso.
@@ -42,6 +48,9 @@ services:
       - LOGIN_MAX_INTENTOS=5
       - LOGIN_VENTANA_MIN=15
       - CORS_ORIGIN=https://${DOMAIN_NAME}
+      # SAR guarda las rutas de Windows de los adjuntos; S: es \\192.168.121.21\flexxus.
+      # Sin la carpeta montada, el Gantt lista los adjuntos pero no los deja descargar.
+      - ADJUNTOS_RAICES=S:\=/mnt/flexxus;\\192.168.121.21\flexxus=/mnt/flexxus
     # Reemplaza el healthcheck de la imagen, que pega a /api/health y da 503
     # cuando no hay conexion con Firebird. Con ese, una base caida o lenta hace
     # que Swarm mate el contenedor en loop aunque la aplicacion este sana.
@@ -79,6 +88,17 @@ volumes:
   # perder este volumen no pierde informacion de negocio.
   logs:
     name: "${SERVICE_NAME}_logs"
+  # Recurso compartido de SAR, solo lectura (ver la nota en volumes del servicio). Lo monta el
+  # nodo (worker3) por CIFS. Usuario y clave de una cuenta de solo lectura del recurso: se cargan
+  # como variables del stack en Portainer (ADJUNTOS_SMB_USER, ADJUNTOS_SMB_PASS), nunca aca.
+  # La clave no puede tener comas (separan las opciones del montaje).
+  # adjuntos:
+  #   name: "${SERVICE_NAME}_adjuntos"
+  #   driver: local
+  #   driver_opts:
+  #     type: cifs
+  #     device: "//192.168.121.21/flexxus"
+  #     o: "addr=192.168.121.21,username=${ADJUNTOS_SMB_USER},password=${ADJUNTOS_SMB_PASS},ro,vers=3.0,iocharset=utf8,file_mode=0444,dir_mode=0555"
 
 networks:
   traefik:
